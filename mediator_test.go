@@ -63,8 +63,31 @@ func TestReflectMediator_Events(t *testing.T) {
 		})
 
 		err := mediator.Publish(BarEvent{})
-		if err != wantErr {
+		if err.Error() != wantErr.Error() {
 			t.Fatalf("Publish doesn't return proper error from handler %q != %q", err, wantErr)
+		}
+	})
+
+	t.Run("Subscriber should receive any events if argument is empty interface", func(t *testing.T) {
+		mediator := New()
+
+		fooTriggered := false
+		barTriggered := false
+		mediator.Subscribe(func(event interface{}) error {
+			switch event.(type) {
+			case FooEvent: fooTriggered = true
+			case BarEvent: barTriggered = true
+			}
+			return nil
+		})
+
+		_ = mediator.Publish(FooEvent{})
+		if !fooTriggered {
+			t.Fatal("Subscribes is not triggered on foo event")
+		}
+		_ = mediator.Publish(BarEvent{})
+		if !barTriggered {
+			t.Fatal("Subscribes is not triggered on bar event")
 		}
 	})
 }

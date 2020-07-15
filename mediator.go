@@ -25,7 +25,10 @@ func (m Mediator) Subscribe(subscription interface{}) {
 }
 
 func (m Mediator) Publish(event interface{}) error {
-	for _, subscription := range m.subscriptions[reflect.TypeOf(event)] {
+	subscriptions := m.subscriptions[reflect.TypeOf(event)]
+	subscriptions = append(subscriptions, m.subscriptions[reflect.TypeOf(reflect.Interface)]...)
+
+	for _, subscription := range subscriptions {
 		result := subscription.Call([]reflect.Value{reflect.ValueOf(event)})
 		if len(result) == 0 || result[0].IsNil() {
 			continue
