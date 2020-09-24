@@ -46,7 +46,7 @@ func (m Mediator) Register(handler interface{}) error {
 	argKind := reflect.TypeOf(handler).In(0)
 	_, exist := m.registrations[argKind]
 	if exist {
-		return fmt.Errorf("Handler already registered for command %T", argKind)
+		return fmt.Errorf("handler already registered for command %T", argKind)
 	}
 
 	m.registrations[argKind] = reflect.ValueOf(handler)
@@ -57,7 +57,7 @@ func (m Mediator) Register(handler interface{}) error {
 func (m Mediator) Send(command interface{}) (interface{}, error) {
 	handler, ok := m.registrations[reflect.TypeOf(command)]
 	if !ok {
-		return nil, fmt.Errorf("No handlers for command %T", command)
+		return nil, fmt.Errorf("no handlers for command %T", command)
 	}
 
 	result := handler.Call([]reflect.Value{reflect.ValueOf(command)})
