@@ -1,6 +1,7 @@
 package mediatr
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 )
@@ -22,15 +23,36 @@ func New() Mediator {
 // Subscribe add subscription for domain event.
 // Type of event is detected by arguments of handler.
 func (m Mediator) Subscribe(subscription interface{}) {
-	fn := reflect.ValueOf(subscription)
-	argKind := reflect.TypeOf(subscription).In(0)
-	m.subscriptions[argKind] = append(m.subscriptions[argKind], fn)
+	valueOf := reflect.ValueOf(subscription)
+	typeOf := reflect.TypeOf(subscription)
+	argKind := typeOf.In(0)
+
+	if typeOf.NumIn() > 1 {
+		// if first argument is context.
+		value := reflect.New(argKind).Interface()
+		if _, ok := value.(context.Context); !ok {
+			argKind = typeOf.In(1)
+		}
+	}
+
+	m.subscriptions[argKind] = append(m.subscriptions[argKind], valueOf)
 }
 
 // Publish publishes specified domain event to subscribers.
-func (m Mediator) Publish(event interface{}) error {
+func (m Mediator) Publish(ctx context.Context, event interface{}) error {
 	for _, subscription := range m.subscriptions[reflect.TypeOf(event)] {
-		result := subscription.Call([]reflect.Value{reflect.ValueOf(event)})
+		arguments := []reflect.Value{
+			reflect.ValueOf(event),
+		}
+
+		if subscription.Type().NumIn() == 2 {
+			arguments = append(
+				[]reflect.Value{reflect.ValueOf(ctx)},
+				arguments...,
+			)
+		}
+
+		result := subscription.Call(arguments)
 		if len(result) == 0 || result[0].IsNil() {
 			continue
 		}
@@ -43,10 +65,20 @@ func (m Mediator) Publish(event interface{}) error {
 // Register registers command handler.
 // Command type is detected by argument of handler.
 func (m Mediator) Register(handler interface{}) error {
-	argKind := reflect.TypeOf(handler).In(0)
+	typeOf := reflect.TypeOf(handler)
+	argKind := typeOf.In(0)
+
+	if typeOf.NumIn() > 1 {
+		// if first argument is context.
+		value := reflect.New(argKind).Interface()
+		if _, ok := value.(context.Context); !ok {
+			argKind = typeOf.In(1)
+		}
+	}
+
 	_, exist := m.registrations[argKind]
 	if exist {
-		return fmt.Errorf("Handler already registered for command %T", argKind)
+		return fmt.Errorf("handler already registered for command %T", argKind)
 	}
 
 	m.registrations[argKind] = reflect.ValueOf(handler)
@@ -54,13 +86,24 @@ func (m Mediator) Register(handler interface{}) error {
 }
 
 // Send sent command to handler.
-func (m Mediator) Send(command interface{}) (interface{}, error) {
+func (m Mediator) Send(ctx context.Context, command interface{}) (interface{}, error) {
 	handler, ok := m.registrations[reflect.TypeOf(command)]
 	if !ok {
-		return nil, fmt.Errorf("No handlers for command %T", command)
+		return nil, fmt.Errorf("no handlers for command %T", command)
 	}
 
-	result := handler.Call([]reflect.Value{reflect.ValueOf(command)})
+	arguments := []reflect.Value{
+		reflect.ValueOf(command),
+	}
+
+	if handler.Type().NumIn() == 2 {
+		arguments = append(
+			[]reflect.Value{reflect.ValueOf(ctx)},
+			arguments...,
+		)
+	}
+
+	result := handler.Call(arguments)
 	switch len(result) {
 	case 0:
 		return nil, nil

@@ -1,12 +1,16 @@
 package mediatr
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
 
 type FooEvent struct{}
 type BarEvent struct{}
+type EmbeddedContextEvent struct {
+	context.Context
+}
 
 func TestReflectMediator_Events(t *testing.T) {
 	t.Run("Publish triggers subscriber", func(t *testing.T) {
@@ -17,7 +21,7 @@ func TestReflectMediator_Events(t *testing.T) {
 			triggered = true
 		})
 
-		_ = mediator.Publish(FooEvent{})
+		_ = mediator.Publish(context.Background(), FooEvent{})
 		if !triggered {
 			t.Fatal("Subscribes is not triggered on event")
 		}
@@ -31,7 +35,7 @@ func TestReflectMediator_Events(t *testing.T) {
 			triggered = true
 		})
 
-		_ = mediator.Publish(FooEvent{})
+		_ = mediator.Publish(context.Background(), FooEvent{})
 		if triggered {
 			t.Fatal("Subscribes was triggered on incorrect event")
 		}
@@ -45,7 +49,7 @@ func TestReflectMediator_Events(t *testing.T) {
 			return wantErr
 		})
 
-		err := mediator.Publish(BarEvent{})
+		err := mediator.Publish(context.Background(), BarEvent{})
 		if err != wantErr {
 			t.Fatal("Publish doesn't return proper error from handler")
 		}
@@ -62,9 +66,40 @@ func TestReflectMediator_Events(t *testing.T) {
 			return wantErr
 		})
 
-		err := mediator.Publish(BarEvent{})
+		err := mediator.Publish(context.Background(), BarEvent{})
 		if err != wantErr {
 			t.Fatalf("Publish doesn't return proper error from handler %q != %q", err, wantErr)
+		}
+	})
+
+	t.Run("Subscription with context is supported", func(t *testing.T) {
+		wantCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		triggered := false
+		mediator := New()
+		mediator.Subscribe(func(ctx context.Context, event BarEvent) error {
+			triggered = wantCtx == ctx
+			return nil
+		})
+
+		_ = mediator.Publish(wantCtx, BarEvent{})
+		if !triggered {
+			t.Fatal("Subscriber is not triggered on event")
+		}
+	})
+
+	t.Run("Publish event with implementation of context.Context interface", func(t *testing.T) {
+		mediator := New()
+
+		triggered := false
+		mediator.Subscribe(func(EmbeddedContextEvent) {
+			triggered = true
+		})
+
+		_ = mediator.Publish(context.Background(), EmbeddedContextEvent{})
+		if !triggered {
+			t.Fatal("Subscribes is not triggered on event")
 		}
 	})
 }
@@ -78,7 +113,21 @@ func TestReflectMediator_Commands(t *testing.T) {
 			triggered = true
 		})
 
-		_, _ = mediator.Send(FooEvent{})
+		_, _ = mediator.Send(context.Background(), FooEvent{})
+		if !triggered {
+			t.Fatal("Subscribes is not triggered on event")
+		}
+	})
+
+	t.Run("Send command with implementation of context.Context interface", func(t *testing.T) {
+		mediator := New()
+
+		triggered := false
+		_ = mediator.Register(func(command EmbeddedContextEvent) {
+			triggered = true
+		})
+
+		_, _ = mediator.Send(context.Background(), EmbeddedContextEvent{})
 		if !triggered {
 			t.Fatal("Subscribes is not triggered on event")
 		}
@@ -92,7 +141,7 @@ func TestReflectMediator_Commands(t *testing.T) {
 			return wantErr
 		})
 
-		_, err := mediator.Send(FooEvent{})
+		_, err := mediator.Send(context.Background(), FooEvent{})
 		if err != wantErr {
 			t.Fatal("Send was not receive proper error from handler")
 		}
@@ -106,7 +155,7 @@ func TestReflectMediator_Commands(t *testing.T) {
 			return wantResult
 		})
 
-		result, _ := mediator.Send(FooEvent{})
+		result, _ := mediator.Send(context.Background(), FooEvent{})
 		if result != wantResult {
 			t.Fatal("Send was not receive proper result from handler")
 		}
@@ -120,7 +169,7 @@ func TestReflectMediator_Commands(t *testing.T) {
 			return wantResult, nil
 		})
 
-		result, _ := mediator.Send(FooEvent{})
+		result, _ := mediator.Send(context.Background(), FooEvent{})
 		if result != wantResult {
 			t.Fatal("Send was not receive proper result from handler")
 		}
@@ -134,7 +183,7 @@ func TestReflectMediator_Commands(t *testing.T) {
 			return "", wantErr
 		})
 
-		_, err := mediator.Send(FooEvent{})
+		_, err := mediator.Send(context.Background(), FooEvent{})
 		if err != wantErr {
 			t.Fatal("Send was not receive proper error from handler")
 		}
@@ -148,7 +197,7 @@ func TestReflectMediator_Commands(t *testing.T) {
 			triggered = true
 		})
 
-		_, _ = mediator.Send(FooEvent{})
+		_, _ = mediator.Send(context.Background(), FooEvent{})
 		if triggered {
 			t.Fatal("Handler was triggered on incorrect command")
 		}
@@ -156,7 +205,7 @@ func TestReflectMediator_Commands(t *testing.T) {
 
 	t.Run("Send command without registration", func(t *testing.T) {
 		mediator := New()
-		_, err := mediator.Send(FooEvent{})
+		_, err := mediator.Send(context.Background(), FooEvent{})
 		if err == nil {
 			t.Fatal("Send should return error if command handler is not registered")
 		}
@@ -169,6 +218,36 @@ func TestReflectMediator_Commands(t *testing.T) {
 		err := mediator.Register(commandHandler)
 		if err == nil {
 			t.Fatal("Command should only have one handler")
+		}
+	})
+
+	t.Run("Send context and command", func(t *testing.T) {
+		wantCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		triggered := false
+		mediator := New()
+		_ = mediator.Register(func(ctx context.Context, command FooEvent) {
+			triggered = wantCtx == ctx
+		})
+
+		_, _ = mediator.Send(wantCtx, FooEvent{})
+		if !triggered {
+			t.Fatal("Subscribes is not triggered on event")
+		}
+	})
+
+	t.Run("Publish command with implementation of context.Context interface", func(t *testing.T) {
+		mediator := New()
+
+		triggered := false
+		_ = mediator.Register(func(EmbeddedContextEvent) {
+			triggered = true
+		})
+
+		_, _ = mediator.Send(context.Background(), EmbeddedContextEvent{})
+		if !triggered {
+			t.Fatal("Subscribes is not triggered on event")
 		}
 	})
 }
