@@ -22,7 +22,7 @@ func New() Mediator {
 
 // Subscribe add subscription for domain event.
 // Type of event is detected by arguments of handler.
-func (m Mediator) Subscribe(subscription interface{}) {
+func (m Mediator) Subscribe(subscription interface{}) error {
 	valueOf := reflect.ValueOf(subscription)
 	typeOf := reflect.TypeOf(subscription)
 	argKind := typeOf.In(0)
@@ -30,10 +30,17 @@ func (m Mediator) Subscribe(subscription interface{}) {
 	if typeOf.NumIn() > 1 {
 		if argIsContext(argKind) {
 			argKind = typeOf.In(1)
+		} else {
+			const format = "unsupported event handler %T, event handlers" +
+				" with more than 2 parameters and no context.Context are not" +
+				" supported"
+			return fmt.Errorf(format, subscription)
 		}
 	}
 
 	m.subscriptions[argKind] = append(m.subscriptions[argKind], valueOf)
+
+	return nil
 }
 
 // Publish publishes specified domain event to subscribers.
@@ -65,10 +72,14 @@ func (m Mediator) Publish(ctx context.Context, event interface{}) error {
 func (m Mediator) Register(handler interface{}) error {
 	typeOf := reflect.TypeOf(handler)
 	argKind := typeOf.In(0)
-
 	if typeOf.NumIn() > 1 {
 		if argIsContext(argKind) {
 			argKind = typeOf.In(1)
+		} else {
+			const format = "unsupported command handler %T, command handlers" +
+				" with more than 2 parameters and no context.Context are not" +
+				" supported"
+			return fmt.Errorf(format, handler)
 		}
 	}
 
