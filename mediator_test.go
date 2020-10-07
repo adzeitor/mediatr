@@ -102,6 +102,38 @@ func TestReflectMediator_Events(t *testing.T) {
 			t.Fatal("Subscribes is not triggered on event")
 		}
 	})
+
+	t.Run("Publish multiple events", func(t *testing.T) {
+		mediator := New()
+
+		triggered := 0
+		mediator.Subscribe(func(event FooEvent) {
+			triggered++
+		})
+
+		mediator.Subscribe(func(event BarEvent) {
+			triggered++
+		})
+
+		_ = mediator.Publish(context.Background(), FooEvent{}, BarEvent{})
+		if triggered != 2 {
+			t.Fatal("Subscribes is not triggered on event")
+		}
+	})
+
+	t.Run("Sending multiple events of the same type", func(t *testing.T) {
+		mediator := New()
+
+		triggered := 0
+		mediator.Subscribe(func(event FooEvent) {
+			triggered++
+		})
+
+		_ = mediator.Publish(context.Background(), FooEvent{}, FooEvent{})
+		if triggered != 2 {
+			t.Fatal("Subscribes is not triggered on event")
+		}
+	})
 }
 
 func TestReflectMediator_Commands(t *testing.T) {
