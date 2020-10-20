@@ -28,9 +28,7 @@ func (m Mediator) Subscribe(subscription interface{}) {
 	argKind := typeOf.In(0)
 
 	if typeOf.NumIn() > 1 {
-		// if first argument is context.
-		value := reflect.New(argKind).Interface()
-		if _, ok := value.(context.Context); !ok {
+		if argIsContext(argKind) {
 			argKind = typeOf.In(1)
 		}
 	}
@@ -69,9 +67,7 @@ func (m Mediator) Register(handler interface{}) error {
 	argKind := typeOf.In(0)
 
 	if typeOf.NumIn() > 1 {
-		// if first argument is context.
-		value := reflect.New(argKind).Interface()
-		if _, ok := value.(context.Context); !ok {
+		if argIsContext(argKind) {
 			argKind = typeOf.In(1)
 		}
 	}
@@ -129,4 +125,10 @@ func twoReturnValuesCommand(result []reflect.Value) (interface{}, error) {
 		err = result[1].Interface().(error)
 	}
 	return result[0].Interface(), err
+}
+
+var contextType = reflect.TypeOf(new(context.Context)).Elem()
+
+func argIsContext(typeOf reflect.Type) bool {
+	return contextType == typeOf
 }

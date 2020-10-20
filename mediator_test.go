@@ -3,6 +3,7 @@ package mediatr
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 )
 
@@ -248,6 +249,20 @@ func TestReflectMediator_Commands(t *testing.T) {
 		_, _ = mediator.Send(context.Background(), EmbeddedContextEvent{})
 		if !triggered {
 			t.Fatal("Subscribes is not triggered on event")
+		}
+	})
+}
+
+func Test_argIsContext(t *testing.T) {
+	t.Run("Input is a context", func(t *testing.T) {
+		if !argIsContext(reflect.TypeOf(new(context.Context)).Elem()) {
+			t.Fatal("a positive result was expected")
+		}
+	})
+
+	t.Run("Input is not a context", func(t *testing.T) {
+		if argIsContext(reflect.TypeOf(new(EmbeddedContextEvent)).Elem()) {
+			t.Fatal("a negative result was expected")
 		}
 	})
 }
