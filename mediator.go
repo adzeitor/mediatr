@@ -37,24 +37,26 @@ func (m Mediator) Subscribe(subscription interface{}) {
 }
 
 // Publish publishes specified domain event to subscribers.
-func (m Mediator) Publish(ctx context.Context, event interface{}) error {
-	for _, subscription := range m.subscriptions[reflect.TypeOf(event)] {
-		arguments := []reflect.Value{
-			reflect.ValueOf(event),
-		}
+func (m Mediator) Publish(ctx context.Context, event ...interface{}) error {
+	for _, event := range event {
+		for _, subscription := range m.subscriptions[reflect.TypeOf(event)] {
+			arguments := []reflect.Value{
+				reflect.ValueOf(event),
+			}
 
-		if subscription.Type().NumIn() == 2 {
-			arguments = append(
-				[]reflect.Value{reflect.ValueOf(ctx)},
-				arguments...,
-			)
-		}
+			if subscription.Type().NumIn() == 2 {
+				arguments = append(
+					[]reflect.Value{reflect.ValueOf(ctx)},
+					arguments...,
+				)
+			}
 
-		result := subscription.Call(arguments)
-		if len(result) == 0 || result[0].IsNil() {
-			continue
+			result := subscription.Call(arguments)
+			if len(result) == 0 || result[0].IsNil() {
+				continue
+			}
+			return result[0].Interface().(error)
 		}
-		return result[0].Interface().(error)
 	}
 
 	return nil
