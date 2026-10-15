@@ -350,3 +350,103 @@ func TestMultiArgsMediatr_Publish(t *testing.T) {
 		}
 	})
 }
+
+func TestMultiArgsMediatr_PublishEventOrder(t *testing.T) {
+	type FirstEvent struct{ Value int }
+	type SecondEvent struct{ Value int }
+	type subscriberCall struct {
+		First  FirstEvent
+		Second SecondEvent
+	}
+
+	tests := []struct {
+		name             string
+		reverseArguments bool
+		events           []interface{}
+		want             []subscriberCall
+	}{
+		{
+			name:   "Publish handles alternating event types in argument order",
+			events: []interface{}{FirstEvent{Value: 1}, SecondEvent{Value: 1}, FirstEvent{Value: 2}},
+			want: []subscriberCall{
+				{First: FirstEvent{Value: 1}, Second: SecondEvent{Value: 1}},
+				{First: FirstEvent{Value: 2}},
+			},
+		},
+		{
+			name: "Publish handles consecutive events of the same type",
+			events: []interface{}{
+				FirstEvent{Value: 1}, FirstEvent{Value: 2},
+				SecondEvent{Value: 1}, SecondEvent{Value: 2},
+			},
+			want: []subscriberCall{
+				{First: FirstEvent{Value: 1}},
+				{First: FirstEvent{Value: 2}, Second: SecondEvent{Value: 1}},
+				{Second: SecondEvent{Value: 2}},
+			},
+		},
+		{
+			name:             "Publish preserves event order with reversed handler arguments",
+			reverseArguments: true,
+			events:           []interface{}{FirstEvent{Value: 1}, SecondEvent{Value: 1}, FirstEvent{Value: 2}},
+			want: []subscriberCall{
+				{First: FirstEvent{Value: 1}},
+				{Second: SecondEvent{Value: 1}, First: FirstEvent{Value: 2}},
+			},
+		},
+		{
+			name:             "Publish handles consecutive events with reversed handler arguments",
+			reverseArguments: true,
+			events: []interface{}{
+				FirstEvent{Value: 1}, FirstEvent{Value: 2},
+				SecondEvent{Value: 1}, SecondEvent{Value: 2},
+			},
+			want: []subscriberCall{
+				{First: FirstEvent{Value: 1}},
+				{First: FirstEvent{Value: 2}},
+				{Second: SecondEvent{Value: 1}},
+				{Second: SecondEvent{Value: 2}},
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mediator := NewMultiArgsMediatr(New())
+			var calls []subscriberCall
+			if test.reverseArguments {
+				mediator.Subscribe(func(secondEvent SecondEvent, firstEvent FirstEvent) {
+					calls = append(calls, subscriberCall{First: firstEvent, Second: secondEvent})
+				})
+			} else {
+				mediator.Subscribe(func(firstEvent FirstEvent, secondEvent SecondEvent) {
+					calls = append(calls, subscriberCall{First: firstEvent, Second: secondEvent})
+				})
+			}
+
+			err := mediator.Publish(context.Background(), test.events...)
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(calls, test.want) {
+				t.Fatalf("got calls %+v, want %+v", calls, test.want)
+			}
+		})
+	}
+
+	t.Run("Publish delivers every distinct event to a single-event handler", func(t *testing.T) {
+		mediator := NewMultiArgsMediatr(New())
+		var calls []SecondEvent
+		mediator.Subscribe(func(event SecondEvent) { calls = append(calls, event) })
+
+		err := mediator.Publish(context.Background(), SecondEvent{Value: 1}, SecondEvent{Value: 2})
+
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []SecondEvent{{Value: 1}, {Value: 2}}
+		if !reflect.DeepEqual(calls, want) {
+			t.Fatalf("got calls %+v, want %+v", calls, want)
+		}
+	})
+}
