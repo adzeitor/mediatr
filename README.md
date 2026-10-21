@@ -32,6 +32,10 @@ Use `MultiArgsMediatr` to handle multiple event types in one call. The handler
 runs when at least one subscribed event is published; missing pointer arguments
 are `nil`.
 
+Events are combined in the order they are published. An event that comes
+earlier in the handler signature than the previous one, or repeats an already
+filled argument, starts a new call.
+
 ```go
 type FooEvent struct{ Value string }
 type BarEvent struct{ Value int }
@@ -47,6 +51,9 @@ bar := &BarEvent{Value: 42}
 if err := mediator.Publish(context.Background(), foo); err != nil {
     panic(err)
 }
+if err := mediator.Publish(context.Background(), foo, bar); err != nil {
+    panic(err)
+}
 if err := mediator.Publish(context.Background(), bar, foo); err != nil {
     panic(err)
 }
@@ -57,4 +64,6 @@ Output:
 ```text
 Foo: &{foo}, Bar: <nil>
 Foo: &{foo}, Bar: &{42}
+Foo: <nil>, Bar: &{42}
+Foo: &{foo}, Bar: <nil>
 ```

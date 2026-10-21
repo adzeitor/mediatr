@@ -56,56 +56,86 @@ func (m MultiArgsMediatr) Subscribe(subscription interface{}) {
 // Publish publishes specified domain events to subscribers.
 // This method calls handlers that have only one event as an argument.
 // It also calls handlers with multiple event arguments if at least one of
-// the events they subscribe to has arrived.
+// the events they subscribe to has arrived. Events are combined in the order
+// they are published: an event that comes earlier in the handler signature
+// than the previous one, or repeats a filled argument, starts a new call.
 func (m MultiArgsMediatr) Publish(ctx context.Context, events ...interface{}) error {
-	handlerForCall := make(map[reflect.Value][]reflect.Value)
-
-	for _, event := range events {
-		subscriptions := m.subscriptions[reflect.TypeOf(event)]
-
-		for _, subscription := range subscriptions {
-			arguments := make([]reflect.Value, 0, len(subscription.Args))
-
-			for _, arg := range subscription.Args {
-				if argIsContext(arg) {
-					arguments = append(arguments, reflect.ValueOf(ctx))
-					continue
-				}
-				eventFound := false
-				for _, event := range events {
-					eventType := reflect.TypeOf(event)
-					if eventType == arg {
-						arguments = append(arguments, reflect.ValueOf(event))
-						eventFound = true
-						break
-					}
-				}
-				if !eventFound {
-					arguments = append(arguments, reflect.Zero(arg))
-				}
-			}
-
-			handlerForCall[subscription.Handler] = arguments
+	handlerForCall := make(map[reflect.Value][][]reflect.Value, 0)
+	for _, subscription := range *m.orderSubscriptions {
+		callArgumentLists := buildCallArgumentLists(ctx, subscription, events)
+		if callArgumentLists != nil {
+			handlerForCall[subscription.Handler] = callArgumentLists
 		}
 	}
 
 	return m.callByOrder(handlerForCall)
 }
 
+// buildCallArgumentLists builds the argument lists a single handler should be
+// called with for a batch of published events. It returns nil when no
+// published event matches any of the handler's argument types.
+func buildCallArgumentLists(
+	ctx context.Context,
+	subscription handlerSignature,
+	events []interface{},
+) [][]reflect.Value {
+	var callArgumentLists [][]reflect.Value
+	var callArguments []reflect.Value
+	lastArgIndex := -1
+
+	for _, event := range events {
+		argIndex := -1
+		for index, argType := range subscription.Args {
+			if argIsContext(argType) || reflect.TypeOf(event) != argType {
+				continue
+			}
+			if argIndex < 0 {
+				argIndex = index
+			}
+			if index > lastArgIndex {
+				argIndex = index
+				break
+			}
+		}
+		if argIndex < 0 {
+			continue
+		}
+
+		if callArguments == nil || argIndex <= lastArgIndex {
+			callArguments = make([]reflect.Value, len(subscription.Args))
+			for index, argType := range subscription.Args {
+				if argIsContext(argType) {
+					callArguments[index] = reflect.ValueOf(ctx)
+				} else {
+					callArguments[index] = reflect.Zero(argType)
+				}
+			}
+			callArgumentLists = append(callArgumentLists, callArguments)
+		}
+
+		callArguments[argIndex] = reflect.ValueOf(event)
+		lastArgIndex = argIndex
+	}
+
+	return callArgumentLists
+}
+
 // callByOrder calls handlers by order given in Subscribe.
 func (m MultiArgsMediatr) callByOrder(
-	handlerForCall map[reflect.Value][]reflect.Value,
+	handlerForCall map[reflect.Value][][]reflect.Value,
 ) error {
 	for _, handler := range *m.orderSubscriptions {
-		arguments, exists := handlerForCall[handler.Handler]
+		argumentLists, exists := handlerForCall[handler.Handler]
 		if !exists {
 			continue
 		}
-		result := handler.Handler.Call(arguments)
-		if len(result) == 0 || result[0].IsNil() {
-			continue
+		for _, arguments := range argumentLists {
+			result := handler.Handler.Call(arguments)
+			if len(result) == 0 || result[0].IsNil() {
+				continue
+			}
+			return result[0].Interface().(error)
 		}
-		return result[0].Interface().(error)
 	}
 
 	return nil
